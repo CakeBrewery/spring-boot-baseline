@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,7 +48,7 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "User not found", content = @Content)
     })
     public List<FavoriteStock> getUserFavorites(
-            @Parameter(description = "The UUID of the user.", required = true) UUID userId) {
+            @Parameter(description = "The UUID of the user.", required = true) @PathVariable("userId") UUID userId) {
         return userService.getUserFavorites(userId);
     }
 
@@ -61,7 +62,7 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "User not found", content = @Content)
     })
     public void addFavorite(
-            @Parameter(description = "The UUID of the user.", required = true) UUID userId,
+            @Parameter(description = "The UUID of the user.", required = true) @PathVariable("userId") UUID userId,
             @RequestBody AddFavoriteRequest request) {
         userService.addFavorite(userId, request.getSymbol());
     }
@@ -75,8 +76,8 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "User or favorite not found", content = @Content)
     })
     public void removeFavorite(
-            @Parameter(description = "The UUID of the user.", required = true) UUID userId,
-            @Parameter(description = "The stock symbol to remove.", required = true) String symbol) {
+            @Parameter(description = "The UUID of the user.", required = true) @PathVariable("userId") UUID userId,
+            @Parameter(description = "The stock symbol to remove.", required = true) @PathVariable("symbol") String symbol) {
         userService.removeFavorite(userId, symbol);
     }
 }

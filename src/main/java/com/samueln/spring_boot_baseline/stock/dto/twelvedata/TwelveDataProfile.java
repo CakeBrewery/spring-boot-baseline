@@ -13,5 +13,6 @@ public record TwelveDataProfile(
         @JsonProperty("description") String description,
         @JsonProperty("website") String website,
         @JsonProperty("country") String country,
-        @JsonProperty("currency") String currency) {
+        @JsonProperty("currency") String currency,
+        @JsonProperty("market_cap") String marketCap) {
 }

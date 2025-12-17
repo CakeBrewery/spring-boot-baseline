@@ -1,16 +1,22 @@
 package com.samueln.spring_boot_baseline.stock;
 
-import com.samueln.spring_boot_baseline.stock.dto.*;
-import com.samueln.spring_boot_baseline.stock.dto.twelvedata.*;
+import com.samueln.spring_boot_baseline.stock.dto.StockSummary;
+import com.samueln.spring_boot_baseline.stock.dto.twelvedata.TwelveDataProfile;
+import com.samueln.spring_boot_baseline.stock.dto.twelvedata.TwelveDataQuote;
+import com.samueln.spring_boot_baseline.stock.dto.twelvedata.TwelveDataTimeSeries;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.time.format.TextStyle;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,158 +36,113 @@ public class StockService {
         this.baseUrl = baseUrl;
     }
 
-    public GlobalQuote getGlobalQuote(String symbol) {
+    public StockSummary getStockSummary(String symbol) {
+        String normalizedSymbol = symbol == null ? "" : symbol.trim().toUpperCase(Locale.US);
+
+        try {
+            TwelveDataQuote quote = fetchQuote(normalizedSymbol);
+            TwelveDataProfile profile = fetchProfile(normalizedSymbol);
+            TwelveDataTimeSeries timeSeries = fetchTimeSeries(normalizedSymbol);
+
+            List<StockSummary.PricePoint> priceSeries = buildPriceSeries(timeSeries);
+            double yearStartPrice = priceSeries.isEmpty() ? 0 : priceSeries.get(0).value();
+            double week52High = priceSeries.stream().mapToDouble(StockSummary.PricePoint::value).max().orElse(0);
+            double week52Low = priceSeries.stream().mapToDouble(StockSummary.PricePoint::value).min().orElse(0);
+
+            return new StockSummary(
+                    normalizedSymbol,
+                    coalesce(profile != null ? profile.name() : null, quote != null ? quote.name() : null, "N/A"),
+                    coalesce(quote != null ? quote.exchange() : null, profile != null ? profile.exchange() : null,
+                            "N/A"),
+                    profile != null ? coalesce(profile.sector(), "N/A") : "N/A",
+                    "1Y",
+                    parseDouble(quote != null ? quote.close() : null),
+                    parseDouble(quote != null ? quote.change() : null),
+                    parseDouble(quote != null ? quote.percentChange() : null),
+                    parseDouble(profile != null ? profile.marketCap() : null),
+                    week52High,
+                    week52Low,
+                    yearStartPrice,
+                    profile != null ? coalesce(profile.description(), "") : "",
+                    priceSeries);
+        } catch (Exception e) {
+            logger.error("Error building stock summary for {}: {}", symbol, e.getMessage());
+            throw new RuntimeException("Failed to build stock summary for symbol: " + symbol, e);
+        }
+    }
+
+    private TwelveDataQuote fetchQuote(String symbol) {
         String url = String.format("%s/quote?symbol=%s&apikey=%s", baseUrl, symbol, apiKey);
+        return restClient.get()
+                .uri(url)
+                .retrieve()
+                .body(TwelveDataQuote.class);
+    }
 
+    private TwelveDataProfile fetchProfile(String symbol) {
+        String url = String.format("%s/profile?symbol=%s&apikey=%s", baseUrl, symbol, apiKey);
+        return restClient.get()
+                .uri(url)
+                .retrieve()
+                .body(TwelveDataProfile.class);
+    }
+
+    private TwelveDataTimeSeries fetchTimeSeries(String symbol) {
+        String url = String.format("%s/time_series?symbol=%s&interval=1month&outputsize=15&apikey=%s", baseUrl, symbol,
+                apiKey);
+        return restClient.get()
+                .uri(url)
+                .retrieve()
+                .body(TwelveDataTimeSeries.class);
+    }
+
+    private List<StockSummary.PricePoint> buildPriceSeries(TwelveDataTimeSeries response) {
+        if (response == null || response.values() == null || response.values().isEmpty()) {
+            return List.of();
+        }
+
+        List<StockSummary.PricePoint> sortedPoints = response.values().stream()
+                .sorted(Comparator.comparing(TwelveDataTimeSeries.TimeSeriesValue::datetime))
+                .map(value -> new StockSummary.PricePoint(formatMonthLabel(value.datetime()),
+                        parseDouble(value.close())))
+                .filter(point -> point.value() > 0)
+                .collect(Collectors.toList());
+
+        int startIndex = Math.max(sortedPoints.size() - 12, 0);
+        return new ArrayList<>(sortedPoints.subList(startIndex, sortedPoints.size()));
+    }
+
+    private String formatMonthLabel(String date) {
+        if (date == null || date.isBlank()) {
+            return "";
+        }
         try {
-            TwelveDataQuote response = restClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .body(TwelveDataQuote.class);
-
-            if (response == null || response.symbol() == null) {
-                throw new RuntimeException("Empty response or missing symbol for Global Quote");
-            }
-
-            // Map to existing GlobalQuote DTO
-            return new GlobalQuote(
-                    response.symbol(),
-                    response.open(),
-                    response.high(),
-                    response.low(),
-                    response.close(), // price
-                    response.volume(),
-                    response.datetime(), // latest trading day
-                    response.previousClose(),
-                    response.change(),
-                    response.percentChange() + "%" // AlphaVantage usually includes %
-            );
-
-        } catch (Exception e) {
-            logger.error("Error fetching global quote for {}: {}", symbol, e.getMessage());
-            throw new RuntimeException("Failed to fetch global quote for symbol: " + symbol, e);
+            LocalDate parsed = LocalDate.parse(date.substring(0, Math.min(date.length(), 10)));
+            return parsed.getMonth().getDisplayName(TextStyle.SHORT, Locale.US);
+        } catch (DateTimeParseException ex) {
+            logger.warn("Unable to parse date {} for price series label", date);
+            return date;
         }
     }
 
-    public CompanyOverview getCompanyOverview(String symbol) {
-        // Twelve Data requires two calls for this: /profile and /statistics
-        String profileUrl = String.format("%s/profile?symbol=%s&apikey=%s", baseUrl, symbol, apiKey);
-        String statsUrl = String.format("%s/statistics?symbol=%s&apikey=%s", baseUrl, symbol, apiKey);
-
+    private double parseDouble(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
         try {
-            TwelveDataProfile profile = restClient.get().uri(profileUrl).retrieve().body(TwelveDataProfile.class);
-            TwelveDataStatistics stats = restClient.get().uri(statsUrl).retrieve().body(TwelveDataStatistics.class);
-
-            if (profile == null)
-                throw new RuntimeException("Failed to fetch profile");
-
-            TwelveDataStatistics.StatisticsData data = (stats != null) ? stats.statistics() : null;
-            if (data == null) {
-                data = new TwelveDataStatistics.StatisticsData(Collections.emptyMap(), Collections.emptyMap(),
-                        Collections.emptyMap());
-            }
-
-            Map<String, String> valuations = data.valuationsMetrics();
-            if (valuations == null)
-                valuations = Collections.emptyMap();
-
-            Map<String, String> financials = data.financials();
-            if (financials == null)
-                financials = Collections.emptyMap();
-
-            // Safe helper to get from maps
-
-            return new CompanyOverview(
-                    profile.symbol(),
-                    "Common Stock", // AssetType
-                    profile.name(),
-                    profile.description(),
-                    "N/A", // CIK not provided
-                    profile.exchange(),
-                    profile.currency(),
-                    profile.country(),
-                    profile.sector(),
-                    profile.industry(),
-                    "N/A", // Address
-                    profile.website(),
-                    "N/A", // FiscalYearEnd
-                    "N/A", // LatestQuarter
-                    valuations.getOrDefault("market_capitalization", "0"),
-                    valuations.getOrDefault("enterprise_value", "0"), // EBITDA approximation or mapping issue? EV is
-                                                                      // usually separate. Twelve Data has
-                                                                      // enterprise_value.
-                    valuations.getOrDefault("pe_ratio", "0"),
-                    valuations.getOrDefault("peg_ratio", "0"),
-                    financials.getOrDefault("book_value", "0"),
-                    valuations.getOrDefault("dividend_yield", "0"), // DividendPerShare approx? No, yield.
-                    valuations.getOrDefault("dividend_yield", "0"),
-                    valuations.getOrDefault("trailing_eps", "0"), // EPS
-                    "0", // RevenuePerShareTTM
-                    financials.getOrDefault("profit_margin", "0"),
-                    financials.getOrDefault("operating_margin", "0"),
-                    financials.getOrDefault("return_on_assets", "0"),
-                    financials.getOrDefault("return_on_equity", "0"),
-                    financials.getOrDefault("revenue", "0"),
-                    financials.getOrDefault("gross_profit", "0"),
-                    valuations.getOrDefault("diluted_eps", "0"),
-                    "0", // QuarterlyEarningsGrowthYOY
-                    "0", // QuarterlyRevenueGrowthYOY
-                    "0", // AnalystTargetPrice
-                    valuations.getOrDefault("trailing_pe", "0"),
-                    valuations.getOrDefault("forward_pe", "0"),
-                    valuations.getOrDefault("price_sales_ratio", "0"),
-                    valuations.getOrDefault("price_book_ratio", "0"),
-                    valuations.getOrDefault("enterprise_value_revenue", "0"),
-                    valuations.getOrDefault("enterprise_value_ebitda", "0"),
-                    "0", // Beta
-                    "0", // 52WeekHigh - usually in quote or separate endpoint
-                    "0", // 52WeekLow
-                    "0", // 50DayMovingAverage
-                    "0", // 200DayMovingAverage
-                    "0", // SharesOutstanding
-                    "0", // DividendDate
-                    "0" // ExDividendDate
-            );
-
-        } catch (Exception e) {
-            logger.error("Error fetching company overview for {}: {}", symbol, e.getMessage());
-            throw new RuntimeException("Failed to fetch company overview for symbol: " + symbol, e);
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            logger.warn("Unable to parse numeric value: {}", value);
+            return 0;
         }
     }
 
-    public TimeSeriesMonthly getMonthlyTimeSeries(String symbol) {
-        String url = String.format("%s/time_series?symbol=%s&interval=1month&apikey=%s", baseUrl, symbol, apiKey);
-
-        try {
-            TwelveDataTimeSeries response = restClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .body(TwelveDataTimeSeries.class);
-
-            if (response == null || response.values() == null) {
-                throw new RuntimeException("Empty response for Time Series");
+    private String coalesce(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
             }
-
-            // Convert List to Map
-            Map<String, MonthlyData> monthlyDataMap = response.values().stream()
-                    .collect(Collectors.toMap(
-                            TwelveDataTimeSeries.TimeSeriesValue::datetime,
-                            v -> new MonthlyData(v.open(), v.high(), v.low(), v.close(), v.volume()),
-                            (v1, v2) -> v1, // merge function (shouldn't be needed for unique dates)
-                            LinkedHashMap::new // Preserve order
-                    ));
-
-            MetaData meta = new MetaData(
-                    "Monthly Prices (open, high, low, close) and Volumes",
-                    response.meta().symbol(),
-                    "N/A", // Last Refreshed
-                    response.meta().exchangeTimezone());
-
-            return new TimeSeriesMonthly(meta, monthlyDataMap);
-
-        } catch (Exception e) {
-            logger.error("Error fetching monthly time series for {}: {}", symbol, e.getMessage());
-            throw new RuntimeException("Failed to fetch monthly time series for symbol: " + symbol, e);
         }
+        return "";
     }
 }
