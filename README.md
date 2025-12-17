@@ -2,6 +2,8 @@
 
 This is a baseline Spring Boot application. Use as boilerplate to quickly build new ideas.
 
+To be used in conunction with [expo-baseline](https://github.com/CakeBrewery/expo-baseline/blob/master/README.md)
+
 ## Technologies Used
 
 *   **Java:** 25
