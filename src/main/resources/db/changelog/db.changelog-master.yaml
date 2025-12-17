@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: changes/001-initial-schema.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/20251216000000_add_favorites.yaml
+      relativeToChangelogFile: true

@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20251216000000-1
+      author: samueln
+      changes:
+        - createTable:
+            tableName: favorite_stock
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_favorite_stock_user
+                    references: app_user(id)
+              - column:
+                  name: symbol
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: added_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+  - changeSet:
+      id: 20251216000000-2
+      author: samueln
+      changes:
+        - addUniqueConstraint:
+            tableName: favorite_stock
+            columnNames: user_id, symbol
+            constraintName: uc_favorite_stock_user_symbol

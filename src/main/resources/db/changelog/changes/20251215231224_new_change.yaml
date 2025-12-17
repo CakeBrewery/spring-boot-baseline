@@ -1,0 +1,31 @@
+databaseChangeLog:
+- changeSet:
+    id: 1765869146159-1
+    author: samueln (generated)
+    changes:
+    - dropPrimaryKey:
+        tableName: app_user
+- changeSet:
+    id: 1765869146159-2
+    author: samueln (generated)
+    changes:
+    - addPrimaryKey:
+        columnNames: id
+        constraintName: app_userPK
+        tableName: app_user
+- changeSet:
+    id: 1765869146159-3
+    author: samueln (generated)
+    changes:
+    - dropUniqueConstraint:
+        constraintName: UC_APP_USERUSERNAME_COL
+        tableName: app_user
+- changeSet:
+    id: 1765869146159-4
+    author: samueln (generated)
+    changes:
+    - addUniqueConstraint:
+        columnNames: username
+        constraintName: UC_APP_USERUSERNAME_COL
+        tableName: app_user
+

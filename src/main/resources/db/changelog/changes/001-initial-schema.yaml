@@ -1,0 +1,73 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-app-user-table
+      author: samueln
+      changes:
+        - createTable:
+            tableName: app_user
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: username
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: email
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: first_name
+                  type: varchar(255)
+              - column:
+                  name: last_name
+                  type: varchar(255)
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+  - changeSet:
+      id: 002-insert-sample-users
+      author: samueln
+      changes:
+        - insert:
+            tableName: app_user
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "gen_random_uuid()"
+              - column:
+                  name: username
+                  value: "user1"
+              - column:
+                  name: email
+                  value: "user1@example.com"
+              - column:
+                  name: created_at
+                  valueDate: "2024-01-01T12:00:00"
+        - insert:
+            tableName: app_user
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "gen_random_uuid()"
+              - column:
+                  name: username
+                  value: "user2"
+              - column:
+                  name: email
+                  value: "user2@example.com"
+              - column:
+                  name: created_at
+                  valueDate: "2024-01-02T12:00:00"

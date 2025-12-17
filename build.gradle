@@ -1,0 +1,149 @@
+buildscript {
+	repositories {
+		mavenCentral()
+	}
+	dependencies {
+		classpath 'org.liquibase:liquibase-core:5.0.1'
+		classpath 'org.liquibase:liquibase-gradle-plugin:3.1.0'
+	}
+}
+
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.0.0'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.springdoc.openapi-gradle-plugin' version '1.9.0'
+}
+
+apply plugin: 'org.liquibase.gradle'
+
+group = 'com.samueln'
+version = '0.0.1-SNAPSHOT'
+description = 'Baseline Spring Boot app'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+	liquibaseRuntime {
+		extendsFrom runtimeClasspath
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-restclient'
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-restclient-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.liquibase:liquibase-core:5.0.1'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	testImplementation platform('org.testcontainers:testcontainers-bom:1.20.3')
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+
+    // LIQUIBASE RUNTIME
+    liquibaseRuntime 'org.liquibase:liquibase-core:5.0.1'
+    liquibaseRuntime 'org.liquibase.ext:liquibase-hibernate6:5.0.1' // liquibase-hibernate7 not released yet
+    liquibaseRuntime 'info.picocli:picocli:4.7.6'
+    liquibaseRuntime 'org.postgresql:postgresql'
+    // Use an older Spring Boot starter just for the transitive deps (Workaround until liquibase-hibernate7 is released)
+    liquibaseRuntime('org.springframework.boot:spring-boot-starter-data-jpa:3.4.1') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+    }
+        liquibaseRuntime sourceSets.main.output
+}
+
+// Ensure the configuration doesn't leak (Workaround until liquibase-hibernate7 is released)
+configurations {
+    liquibaseRuntime {
+        // Stop inheritance
+        extendsFrom = []
+        // Stop the Spring Boot 4 BOM from upgrading Hibernate
+        resolutionStrategy {
+            eachDependency { details ->
+                if (details.requested.group == 'org.hibernate.orm') {
+                    details.useVersion '6.6.15.Final'
+                }
+            }
+        }
+    }
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+tasks.named('bootRun') {
+	doFirst {
+		loadEnv(it)
+	}
+}
+
+void loadEnv(Task task) {
+	def envFile = file('.env')
+	if (!envFile.exists()) {
+		logger.lifecycle("'.env' file not found. Skipping environment variable loading for bootRun.")
+		return
+	}
+
+	logger.lifecycle("Loading environment variables from .env (filtering for 'GRADLE_ENV_' prefix) for bootRun task.")
+	envFile.readLines().each { line ->
+		line = line.trim()
+		if (line.isEmpty() || line.startsWith('#')) return
+
+		def parts = line.split('=', 2)
+		if (parts.length == 2) {
+			def key = parts[0].trim()
+			def value = parts[1].trim()
+			
+			if (key.startsWith('GRADLE_ENV_')) {
+				task.environment key, value
+				logger.lifecycle("Loaded environment variable: ${key}")
+			}
+		}
+	}
+}
+
+liquibase {
+    activities {
+        main {
+            driver 'org.postgresql.Driver'
+            url 'jdbc:postgresql://localhost:5432/mydatabase'
+            username 'myuser'
+            password 'secret'
+            changelogFile project.findProperty('changeLogFile') ?: 'src/main/resources/db/changelog/db.changelog-master.yaml'
+            referenceUrl 'hibernate:spring:com.samueln.spring_boot_baseline?dialect=org.hibernate.dialect.PostgreSQLDialect&hibernate.physical_naming_strategy=org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy'
+        }
+    }
+    runList = 'main'
+}
+
+openApi {
+    apiDocsUrl.set("http://localhost:8080/v3/api-docs")
+    outputDir.set(file("build/api-spec"))
+    outputFileName.set("openapi.json")
+    waitTimeInSeconds.set(30)
+    customBootRun {
+        args.set(["--spring.docker.compose.file=" + project.file("compose.yaml").absolutePath])
+    }
+}
