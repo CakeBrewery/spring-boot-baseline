@@ -9,6 +9,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface FavoriteStockRepository extends JpaRepository<FavoriteStockEntity, UUID> {
     List<FavoriteStockEntity> findByUserId(UUID userId);
+
     Optional<FavoriteStockEntity> findByUserIdAndSymbol(UUID userId, String symbol);
+
     void deleteByUserIdAndSymbol(UUID userId, String symbol);
 }

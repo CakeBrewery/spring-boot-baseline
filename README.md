@@ -49,7 +49,9 @@ Once started, the application will be available at `http://localhost:8080`.
 # Liquibase Hibernate 7 Incompatibility Fix (Spring Boot 4)
 
 ## The Problem
+
 Running `liquibase diffChangeLog` fails in a Spring Boot 4 (Java 25) project.
+
 *   **Error 1:** `java.lang.NoSuchMethodError: '...MetadataBuildingOptions.getIdentifierGeneratorFactory()'`
 *   **Error 2:** `java.lang.NoClassDefFoundError: picocli/CommandLine$IVersionProvider`
 
@@ -59,60 +61,15 @@ Running `liquibase diffChangeLog` fails in a Spring Boot 4 (Java 25) project.
 3.  **Missing CLI Parser:** One more issue to solve was isolating the configuration removes transitive dependencies, causing `picocli` (required by Liquibase) to be missing.
 
 ## The Solution
+
 We must create an "Isolation Bubble" for the Liquibase task:
+
 1.  **Isolate Configuration:** Set `extendsFrom = []` for `liquibaseRuntime` to prevent inheriting the main app's Hibernate 7 jars.
 2.  **Force Downgrade:** Use `resolutionStrategy { force ... }` to override Spring Boot's BOM and strictly enforce Hibernate 6.6.x.
 3.  **Manual Dependencies:** Manually re-add `picocli` and a Spring Boot 3.x starter (which uses Hibernate 6) to the runtime configuration.
 4.  **Package Scanning:** Change `referenceUrl` to scan packages (`hibernate:com.example...`) instead of the Spring context (`hibernate:spring:...`) to avoid loading the Spring Boot 4 app context in the Hibernate 6 environment.
 
 These workarounds should be removed once `liquibase-hibernate7` gets released. 
-
-## Working `build.gradle` Configuration
-
-```groovy
-configurations {
-    liquibaseRuntime {
-        // 1. ISOLATION: Do not inherit dependencies from the main app (keeps Hibernate 7 out)
-        extendsFrom = [] 
-        
-        // 2. FORCE VERSION: Prevent Spring Boot 4 BOM from upgrading Hibernate back to 7.x
-        resolutionStrategy {
-            force 'org.hibernate.orm:hibernate-core:6.6.15.Final'
-        }
-    }
-}
-
-dependencies {
-    // ... Main App Dependencies (Spring Boot 4 / Hibernate 7) ...
-
-    // --- LIQUIBASE RUNTIME (Isolated Hibernate 6 Environment) ---
-    liquibaseRuntime 'org.liquibase:liquibase-core:5.0.1'
-    liquibaseRuntime 'org.liquibase.ext:liquibase-hibernate6:5.0.1'
-    liquibaseRuntime 'info.picocli:picocli:4.7.6' // Required for CLI parsing
-    liquibaseRuntime 'org.postgresql:postgresql'
-    liquibaseRuntime sourceSets.main.output // To read your entities
-
-    // Use Spring Boot 3.4.1 dependencies to safely pull in Hibernate 6
-    liquibaseRuntime('org.springframework.boot:spring-boot-starter-data-jpa:3.4.1') {
-        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
-    }
-}
-
-liquibase {
-    activities {
-        main {
-            // ... database credentials ...
-            
-            // NOTE: Use package scanning ('hibernate:com...') instead of Spring context ('hibernate:spring:...')
-            referenceUrl 'hibernate:com.samueln.spring_boot_baseline?dialect=org.hibernate.dialect.PostgreSQLDialect&hibernate.physical_naming_strategy=org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy'
-        }
-    }
-}
-```
-
-```bash
-./gradlew diffChangelog -PchangeLogFile=src/main/resources/db/changelog/changes/$(date +%Y%m%d%H%M%S)_new_change.yaml
-```
 
 ## Liquibase Workflows
 
@@ -180,3 +137,14 @@ The generated file will be located at `build/api-spec/openapi.json`. This file i
 *   **Swagger UI:** Access the interactive API documentation at `http://localhost:8080/swagger-ui.html`
 *   **API Documentation (JSON):** The raw OpenAPI JSON can be found at `http://localhost:8080/v3/api-docs`
 *   **User API:** `http://localhost:8080/api/users` (GET request to retrieve all users)
+
+### Regenerating OpenAPI Specification
+When changes are made to the backend's API endpoints or DTOs that affect the external contract, the OpenAPI specification needs to be regenerated. This ensures that frontend clients (like the `expo-baseline` application) can update their generated API code.
+
+To generate the `openapi.json` file:
+
+```bash
+./gradlew generateOpenApiDocs
+```
+
+The generated file will be located at `build/api-spec/openapi.json`. This file should then be copied to the `expo-baseline` project to regenerate its API client.

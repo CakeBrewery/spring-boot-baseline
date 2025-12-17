@@ -3,7 +3,10 @@ package com.samueln.spring_boot_baseline.stock.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import lombok.Builder;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
+@Builder
 public record CompanyOverview(
         @JsonAlias("Symbol") String symbol,
         @JsonAlias("AssetType") String assetType,
