@@ -2,6 +2,9 @@ package com.samueln.spring_boot_baseline.stock.dto;
 
 import java.util.List;
 
+import lombok.Builder;
+
+@Builder
 public record StockSummary(
         String symbol,
         String companyName,

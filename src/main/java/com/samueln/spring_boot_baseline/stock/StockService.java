@@ -49,22 +49,28 @@ public class StockService {
             double week52High = priceSeries.stream().mapToDouble(StockSummary.PricePoint::value).max().orElse(0);
             double week52Low = priceSeries.stream().mapToDouble(StockSummary.PricePoint::value).min().orElse(0);
 
-            return new StockSummary(
-                    normalizedSymbol,
-                    coalesce(profile != null ? profile.name() : null, quote != null ? quote.name() : null, "N/A"),
-                    coalesce(quote != null ? quote.exchange() : null, profile != null ? profile.exchange() : null,
-                            "N/A"),
-                    profile != null ? coalesce(profile.sector(), "N/A") : "N/A",
-                    "1Y",
-                    parseDouble(quote != null ? quote.close() : null),
-                    parseDouble(quote != null ? quote.change() : null),
-                    parseDouble(quote != null ? quote.percentChange() : null),
-                    parseDouble(profile != null ? profile.marketCap() : null),
-                    week52High,
-                    week52Low,
-                    yearStartPrice,
-                    profile != null ? coalesce(profile.description(), "") : "",
-                    priceSeries);
+            return StockSummary.builder()
+                    .symbol(normalizedSymbol)
+                    .companyName(coalesce(
+                            profile != null ? profile.name() : null,
+                            quote != null ? quote.name() : null,
+                            "N/A"))
+                    .exchange(coalesce(
+                            quote != null ? quote.exchange() : null,
+                            profile != null ? profile.exchange() : null,
+                            "N/A"))
+                    .sector(profile != null ? coalesce(profile.sector(), "N/A") : "N/A")
+                    .timeline("1Y")
+                    .price(parseDouble(quote != null ? quote.close() : null))
+                    .dailyChange(parseDouble(quote != null ? quote.change() : null))
+                    .dailyChangePercent(parseDouble(quote != null ? quote.percentChange() : null))
+                    .marketCap(parseDouble(profile != null ? profile.marketCap() : null))
+                    .week52High(week52High)
+                    .week52Low(week52Low)
+                    .yearStartPrice(yearStartPrice)
+                    .description(profile != null ? coalesce(profile.description(), "") : "")
+                    .priceSeries(priceSeries)
+                    .build();
         } catch (Exception e) {
             logger.error("Error building stock summary for {}: {}", symbol, e.getMessage());
             throw new RuntimeException("Failed to build stock summary for symbol: " + symbol, e);
